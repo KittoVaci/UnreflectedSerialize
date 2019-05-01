@@ -10,14 +10,61 @@ namespace UnreflectedSerializer
 
   public class RootDescriptor<T>
   {
+    private Scope RootScope = null;
+    private Scope CurrentScope;
+
     List<Func<T, object>> delegates = new List<Func<T, object>>();
     public void AddDelegate(Func<T, object> Delegate) => delegates.Add(Delegate);
-    public void Serialize(TextWriter writer, T instance)
+
+    public void AddScope(string name)
     {
-      foreach (var Delegate in delegates)
+      if (RootScope == null)
       {
-        writer.WriteLine(Delegate.Invoke(instance));
+        RootScope = new Scope { Name = name };
+        CurrentScope = RootScope;
       }
+      else
+      {
+        Scope newScope = new Scope { Name = name, Parent = CurrentScope };
+        CurrentScope.Childrens.Add(newScope);
+        CurrentScope = newScope;
+      }
+    }
+
+    public void EndScope() => CurrentScope = CurrentScope.Parent;
+    public void AddValue(string name, Func<T, object> value) => CurrentScope.values.Add(name, value);
+    public void Serialize(TextWriter writer, T instance) => RootScope.PrintYourSelf(writer, instance, 0);
+
+    class Scope
+    {
+      public Scope Parent = null;
+      public string Name;
+      public List<Scope> Childrens = new List<Scope>();
+      public Dictionary<string, Func<T, object>> values = new Dictionary<string, Func<T, object>>();
+      public void PrintYourSelf(TextWriter writer, T instance, int spaces)
+      {
+        printSpaces(writer, spaces);
+        writer.WriteLine("<" + Name + ">");
+        foreach (var item in values)
+        {
+          printSpaces(writer, spaces + 2);
+          writer.WriteLine(Utils.DelegateTextWrapper(item.Key, item.Value.Invoke(instance).ToString()));
+        }
+        foreach (var item in Childrens)
+        {
+          item.PrintYourSelf(writer, instance, spaces + 2);
+        }
+        printSpaces(writer, spaces);
+        writer.WriteLine("</" + Name + ">");
+      }
+      private static void printSpaces(TextWriter writer, int spaces)
+      {
+        for (int i = 0; i < spaces; i++) writer.Write(" ");
+      }
+    }
+    static class Utils
+    {
+      public static string DelegateTextWrapper(string name, string text) => "<" + name + ">" + text + "</" + name + ">";
     }
   }
 
@@ -72,35 +119,30 @@ namespace UnreflectedSerializer
     static RootDescriptor<Person> GetPersonDescriptor()
     {
       var rootDesc = new RootDescriptor<Person>();
-      rootDesc.AddDelegate((Person person) => "<Person>");
-      rootDesc.AddDelegate((Person firstName) => Utils.DelegateTextWrapper("FirstName", firstName.FirstName));
-      rootDesc.AddDelegate((Person lastName) => Utils.DelegateTextWrapper("LastName", lastName.LastName));
-      rootDesc.AddDelegate((Person homeAddress) => "<HomeAddress>");
-      rootDesc.AddDelegate((Person street) => Utils.DelegateTextWrapper("Street", street.HomeAddress.Street));
-      rootDesc.AddDelegate((Person city) => Utils.DelegateTextWrapper("City", city.HomeAddress.City));
-      rootDesc.AddDelegate((Person homeAddress) => "</HomeAddress>");
-      rootDesc.AddDelegate((Person homeAddress) => "<WorkAddress>");
-      rootDesc.AddDelegate((Person street) => Utils.DelegateTextWrapper("Street", street.WorkAddress.Street));
-      rootDesc.AddDelegate((Person city) => Utils.DelegateTextWrapper("City", city.WorkAddress.City));
-      rootDesc.AddDelegate((Person homeAddress) => "</WorkAddress>");
-      rootDesc.AddDelegate((Person homeAddress) => "<CitizenOf>");
-      rootDesc.AddDelegate((Person name) => Utils.DelegateTextWrapper("Name", name.CitizenOf.Name));
-      rootDesc.AddDelegate((Person areaCode) => Utils.DelegateTextWrapper("AreaCode", areaCode.CitizenOf.AreaCode.ToString()));
-      rootDesc.AddDelegate((Person homeAddress) => "</CitizenOf>");
-      rootDesc.AddDelegate((Person homeAddress) => "<MobilePhone>");
-      rootDesc.AddDelegate((Person homeAddress) => "<Country>");
-      rootDesc.AddDelegate((Person name) => Utils.DelegateTextWrapper("Name", name.MobilePhone.Country.Name));
-      rootDesc.AddDelegate((Person areaCode) => Utils.DelegateTextWrapper("AreaCode", areaCode.MobilePhone.Country.AreaCode.ToString()));
-      rootDesc.AddDelegate((Person homeAddress) => "</Country>");
-      rootDesc.AddDelegate((Person number) => Utils.DelegateTextWrapper("Number", number.MobilePhone.Number.ToString()));
-      rootDesc.AddDelegate((Person homeAddress) => "</MobilePhone>");
-      rootDesc.AddDelegate((Person homeAddress) => "</Person>");
+      rootDesc.AddScope("Person");
+      rootDesc.AddValue("FirstName", (Person p) => p.FirstName);
+      rootDesc.AddValue("LastName", (Person p) => p.LastName);
+      rootDesc.AddScope("HomeAddress");
+      rootDesc.AddValue("Street", (Person p) => p.HomeAddress.Street);
+      rootDesc.AddValue("City", (Person p) => p.HomeAddress.City);
+      rootDesc.EndScope();
+      rootDesc.AddScope("WorkAddress");
+      rootDesc.AddValue("Street", (Person p) => p.WorkAddress.Street);
+      rootDesc.AddValue("City", (Person p) => p.WorkAddress.City);
+      rootDesc.EndScope();
+      rootDesc.AddScope("CitizenOf");
+      rootDesc.AddValue("Name", (Person p) => p.CitizenOf.Name);
+      rootDesc.AddValue("AreaCode", (Person p) => p.CitizenOf.AreaCode);
+      rootDesc.EndScope();
+      rootDesc.AddScope("MobilePhone");
+      rootDesc.AddValue("Number", (Person p) => p.MobilePhone.Number);
+      rootDesc.AddScope("Country");
+      rootDesc.AddValue("Name", (Person p) => p.MobilePhone.Country.Name);
+      rootDesc.AddValue("AreaCode", (Person p) => p.MobilePhone.Country.AreaCode);
+      rootDesc.EndScope();
+      rootDesc.EndScope();
+      rootDesc.EndScope();
       return rootDesc;
-    }
-
-    static class Utils
-    {
-      public static string DelegateTextWrapper(string name, string text) => "<" + name + ">" + text + "</" + name + ">";
     }
   }
 }
